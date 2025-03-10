@@ -19,8 +19,11 @@ import { exec } from 'child_process';
 import treeKill from './lib/tree-kill.js';
 import serialize, { Client } from './lib/serialize.js';
 import { formatSize, parseFileSize, sendTelegram } from './lib/function.js';
+import handleStatusMessages from './FITUR_AUTO_READ_STORY/CodeAutoReadStory.js';
+import config from './config.js';
+import { sendBotNotification } from './FITUR_AUTO_READ_STORY/NOTIFIKASI_BOT/NotifBot.js';
 
-const logger = pino({ timestamp: () => `,"time":"${new Date().toJSON()}"` }).child({ class: 'hisoka' });
+const logger = pino({ timestamp: () => `,"time":"${new Date().toJSON()}"` }).child({ class: 'wilykun' });
 logger.level = 'fatal';
 
 const usePairingCode = process.env.PAIRING_NUMBER;
@@ -41,7 +44,7 @@ const startSock = async () => {
 	/**
 	 * @type {import('baileys').WASocket}
 	 */
-	const hisoka = makeWASocket.default({
+	const wilykun = makeWASocket.default({
 		version,
 		logger,
 		printQRInTerminal: !usePairingCode,
@@ -50,7 +53,7 @@ const startSock = async () => {
 			keys: makeCacheableSignalKeyStore(state.keys, logger),
 		},
 		browser: Browsers.ubuntu('Chrome'),
-		markOnlineOnConnect: false,
+		markOnlineOnConnect: config.autoOnline,
 		generateHighQualityLinkPreview: true,
 		syncFullHistory: true,
 		retryRequestDelayMs: 10,
@@ -73,16 +76,16 @@ const startSock = async () => {
 		},
 	});
 
-	store.bind(hisoka.ev);
-	await Client({ hisoka, store });
+	store.bind(wilykun.ev);
+	await Client({ wilykun, store });
 
 	// login dengan pairing
-	if (usePairingCode && !hisoka.authState.creds.registered) {
+	if (usePairingCode && !wilykun.authState.creds.registered) {
 		try {
 			let phoneNumber = usePairingCode.replace(/[^0-9]/g, '');
 
 			await delay(3000);
-			let code = await hisoka.requestPairingCode(phoneNumber);
+			let code = await wilykun.requestPairingCode(phoneNumber);
 			console.log(`\x1b[32m${code?.match(/.{1,4}/g)?.join('-') || code}\x1b[39m`);
 		} catch {
 			console.error('Gagal mendapatkan kode pairing');
@@ -91,10 +94,10 @@ const startSock = async () => {
 	}
 
 	// ngewei info, restart or close
-	hisoka.ev.on('connection.update', async update => {
+	wilykun.ev.on('connection.update', async update => {
 		const { lastDisconnect, connection } = update;
 		if (connection) {
-			console.info(`Connection Status : ${connection}`);
+			console.info(`Status Koneksi : ${connection === 'connecting' ? 'menghubungkan' : connection === 'open' ? 'terbuka' : connection}`);
 		}
 
 		if (connection === 'close') {
@@ -105,7 +108,7 @@ const startSock = async () => {
 				case DisconnectReason.loggedOut:
 				case 403:
 					console.error(lastDisconnect.error?.message);
-					await hisoka.logout();
+					await wilykun.logout();
 					fs.rmSync(`./${process.env.SESSION_NAME}`, { recursive: true, force: true });
 					exec('npm run stop:pm2', err => {
 						if (err) return treeKill(process.pid);
@@ -118,12 +121,28 @@ const startSock = async () => {
 		}
 
 		if (connection === 'open') {
-			hisoka.sendMessage(jidNormalizedUser(hisoka.user.id), { text: `${hisoka.user?.name} has Connected...` });
+			await sendBotNotification(wilykun);
+			if (!config.autoOnline) {
+				await wilykun.sendPresenceUpdate('unavailable');
+			}
+		}
+	});
+
+	// Auto Typing and Auto Record
+	wilykun.ev.on('messages.upsert', async ({ messages }) => {
+		if (messages.length > 0) {
+			const m = messages[0];
+			if (config.autoTyping) {
+				await wilykun.sendPresenceUpdate('composing', m.key.remoteJid);
+			}
+			if (config.autoRecord) {
+				await wilykun.sendPresenceUpdate('recording', m.key.remoteJid);
+			}
 		}
 	});
 
 	// write session kang
-	hisoka.ev.on('creds.update', saveCreds);
+	wilykun.ev.on('creds.update', saveCreds);
 
 	// contacts
 	if (fs.existsSync(pathContacts)) {
@@ -139,7 +158,7 @@ const startSock = async () => {
 	}
 
 	// add contacts update to store
-	hisoka.ev.on('contacts.update', update => {
+	wilykun.ev.on('contacts.update', update => {
 		for (let contact of update) {
 			let id = jidNormalizedUser(contact.id);
 			if (store && store.contacts) store.contacts[id] = { ...(store.contacts?.[id] || {}), ...(contact || {}) };
@@ -147,7 +166,7 @@ const startSock = async () => {
 	});
 
 	// add contacts upsert to store
-	hisoka.ev.on('contacts.upsert', update => {
+	wilykun.ev.on('contacts.upsert', update => {
 		for (let contact of update) {
 			let id = jidNormalizedUser(contact.id);
 			if (store && store.contacts) store.contacts[id] = { ...(contact || {}), isContact: true };
@@ -155,7 +174,7 @@ const startSock = async () => {
 	});
 
 	// nambah perubahan grup ke store
-	hisoka.ev.on('groups.update', updates => {
+	wilykun.ev.on('groups.update', updates => {
 		for (const update of updates) {
 			const id = update.id;
 			if (store.groupMetadata[id]) {
@@ -165,7 +184,7 @@ const startSock = async () => {
 	});
 
 	// merubah status member
-	hisoka.ev.on('group-participants.update', ({ id, participants, action }) => {
+	wilykun.ev.on('group-participants.update', ({ id, participants, action }) => {
 		const metadata = store.groupMetadata[id];
 		if (metadata) {
 			switch (action) {
@@ -190,52 +209,7 @@ const startSock = async () => {
 	});
 
 	// bagian pepmbaca status ono ng kene
-	hisoka.ev.on('messages.upsert', async ({ messages }) => {
-		if (!messages[0].message) return;
-		let m = await serialize(hisoka, messages[0], store);
-
-		// nambah semua metadata ke store
-		if (store.groupMetadata && Object.keys(store.groupMetadata).length === 0) store.groupMetadata = await hisoka.groupFetchAllParticipating();
-
-		// untuk membaca pesan status
-		if (m.key && !m.key.fromMe && m.key.remoteJid === 'status@broadcast') {
-			if (m.type === 'protocolMessage' && m.message.protocolMessage.type === 0) return;
-			await hisoka.readMessages([m.key]);
-			let id = m.key.participant;
-			let name = hisoka.getName(id);
-
-			// react status
-			const emojis = process.env.REACT_STATUS.split(',')
-				.map(e => e.trim())
-				.filter(Boolean);
-
-			if (emojis.length) {
-				await hisoka.sendMessage(
-					'status@broadcast',
-					{
-						react: { key: m.key, text: emojis[Math.floor(Math.random() * emojis.length)] },
-					},
-					{
-						statusJidList: [jidNormalizedUser(hisoka.user.id), jidNormalizedUser(id)],
-					}
-				);
-			}
-
-			if (process.env.TELEGRAM_TOKEN && process.env.ID_TELEGRAM) {
-				if (m.isMedia) {
-					let media = await hisoka.downloadMediaMessage(m);
-					let caption = `Dari : https://wa.me/${id.split('@')[0]} (${name})${m.body ? `\n\n${m.body}` : ''}`;
-					await sendTelegram(process.env.ID_TELEGRAM, media, { type: /audio/.test(m.msg.mimetype) ? 'document' : '', caption });
-				} else await sendTelegram(process.env.ID_TELEGRAM, `Dari : https://wa.me/${id.split('@')[0]} (${name})\n\n${m.body}`);
-			}
-		}
-
-		// status self apa publik
-		if (process.env.SELF === 'true' && !m.isOwner) return;
-
-		// kanggo kes
-		await (await import(`./message.js?v=${Date.now()}`)).default(hisoka, store, m);
-	});
+	handleStatusMessages(wilykun, store);
 
 	setInterval(async () => {
 		// write contacts and metadata
@@ -249,8 +223,8 @@ const startSock = async () => {
 		const memoryUsage = os.totalmem() - os.freemem();
 
 		if (memoryUsage > os.totalmem() - parseFileSize(process.env.AUTO_RESTART, false)) {
-			await hisoka.sendMessage(
-				jidNormalizedUser(hisoka.user.id),
+			await wilykun.sendMessage(
+				jidNormalizedUser(wilykun.user.id),
 				{ text: `penggunaan RAM mencapai *${formatSize(memoryUsage)}* waktunya merestart...` },
 				{ ephemeralExpiration: 24 * 60 * 60 * 1000 }
 			);
@@ -265,3 +239,33 @@ const startSock = async () => {
 };
 
 startSock();
+
+if (process.env.HANDLE_ERRORS === 'true') {
+	process.on('uncaughtException', function (err) {
+		let e = String(err);
+		if (e.includes("Socket connection timeout")) return;
+		if (e.includes("item-not-found")) return;
+		if (e.includes("rate-overlimit")) return;
+		if (e.includes("Connection Closed")) return;
+		if (e.includes("Timed Out")) return;
+		if (e.includes("Value not found")) return;
+		if (e.includes("Failed to decrypt message with any known session") || e.includes("Bad MAC")) return;
+		if (e.includes("Closing open session in favor of incoming prekey bundle")) return;
+		if (e.includes("Closing session: SessionEntry")) return;
+		console.log('Caught exception: ', err);
+	});
+
+	process.on('unhandledRejection', function (reason, promise) {
+		let e = String(reason);
+		if (e.includes("Socket connection timeout")) return;
+		if (e.includes("item-not-found")) return;
+		if (e.includes("rate-overlimit")) return;
+		if (e.includes("Connection Closed")) return;
+		if (e.includes("Timed Out")) return;
+		if (e.includes("Value not found")) return;
+		if (e.includes("Failed to decrypt message with any known session") || e.includes("Bad MAC")) return;
+		if (e.includes("Closing open session in favor of incoming prekey bundle")) return;
+		if (e.includes("Closing session: SessionEntry")) return;
+		console.error('Unhandled rejection at:', promise, 'reason:', reason);
+	});
+}

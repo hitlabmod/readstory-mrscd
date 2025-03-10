@@ -8,27 +8,20 @@ import serialize, { getContentType } from './lib/serialize.js';
 
 /**
  * 
- * @param {import('baileys').WASocket} hisoka 
+ * @param {import('baileys').WASocket} wilykun 
  * @param {any} store 
  * @param {import('baileys').WAMessage} m 
  */
-export default async function message(hisoka, store, m) {
+export default async function message(wilykun, store, m) {
 	try {
 		let quoted = m.isQuoted ? m.quoted : m;
-		let downloadM = async filename => await hisoka.downloadMediaMessage(quoted, filename);
+		let downloadM = async filename => await wilykun.downloadMediaMessage(quoted, filename);
 		let isCommand = (m.prefix && m.body.startsWith(m.prefix)) || false;
 
 		// mengabaikan pesan dari bot
 		if (m.isBot) return;
 
-		// memunculkan ke log
-		if (m.message && !m.isBot) {
-			console.log(Color.cyan('Dari'), Color.cyan(hisoka.getName(m.from)), Color.blueBright(m.from));
-			console.log(Color.yellowBright('Chat'), Color.yellowBright(m.isGroup ? `Grup (${m.sender} : ${hisoka.getName(m.sender)})` : 'Pribadi'));
-			console.log(Color.greenBright('Pesan :'), Color.greenBright(m.body || m.type));
-		}
-
-		// command
+			// command
 		switch (isCommand ? m.command.toLowerCase() : false) {
 			case 'menu':
 				{
@@ -97,7 +90,7 @@ export default async function message(hisoka, store, m) {
 *Ping :* *_${Number(neow - eold).toFixed(2)} milisecond(s)_*
 
 💻 *_Info Server_*
-*- Hostname :* ${os.hostname() || hisoka.user?.name}
+*- Hostname :* ${os.hostname() || wilykun.user?.name}
 *- Platform :* ${os.platform()}
 *- OS :* ${os.version()} / ${os.release()}
 *- Arch :* ${os.arch()}
@@ -153,7 +146,7 @@ ${cpus
 			case 'q':
 				if (!m.isQuoted) throw 'Reply Pesan';
 				try {
-					var message = await serialize(hisoka, await store.loadMessage(m.from, m.quoted.id), store);
+					var message = await serialize(wilykun, await store.loadMessage(m.from, m.quoted.id), store);
 					if (!message.isQuoted) throw 'Pesan quoted gaada';
 					await m.reply({ forward: message.quoted, force: true });
 				} catch (e) {
@@ -203,7 +196,7 @@ ${cpus
 					const result = {};
 					story.forEach(obj => {
 						let participant = obj.key.participant || obj.participant;
-						participant = jidNormalizedUser(participant === 'status_me' ? hisoka.user.id : participant);
+						participant = jidNormalizedUser(participant === 'status_me' ? wilykun.user.id : participant);
 						if (!result[participant]) {
 							result[participant] = [];
 						}
@@ -213,7 +206,7 @@ ${cpus
 					let text = '';
 					for (let id of Object.keys(result)) {
 						if (!id) return;
-						text += `*- ${hisoka.getName(id)}*\n`;
+						text += `*- ${wilykun.getName(id)}*\n`;
 						text += `${result[id].map((v, i) => `${i + 1}. ${type(v.message)}`).join('\n')}\n\n`;
 					}
 					await m.reply(text.trim(), { mentions: Object.keys(result) });
@@ -223,7 +216,7 @@ ${cpus
 			case 'upsw':
 				if (m.isOwner) {
 					let statusJidList = [
-						jidNormalizedUser(hisoka.user.id),
+						jidNormalizedUser(wilykun.user.id),
 						...Object.values(store.contacts)
 							.filter(v => v.isContact)
 							.map(v => v.id),
@@ -233,7 +226,7 @@ ${cpus
 					if (!quoted.isMedia) {
 						let text = m.text || m.quoted?.body || '';
 						if (!text) throw 'Mana text?';
-						await hisoka.sendMessage(
+						await wilykun.sendMessage(
 							'status@broadcast',
 							{ text },
 							{
@@ -245,7 +238,7 @@ ${cpus
 						);
 						await m.reply(`Up status ke : ${statusJidList.length} Kontak`);
 					} else if (/audio/.test(quoted.msg.mimetype)) {
-						await hisoka.sendMessage(
+						await wilykun.sendMessage(
 							'status@broadcast',
 							{
 								audio: await downloadM(),
@@ -259,7 +252,7 @@ ${cpus
 					} else {
 						let type = /image/.test(quoted.msg.mimetype) ? 'image' : /video/.test(quoted.msg.mimetype) ? 'video' : false;
 						if (!type) throw 'Type tidak didukung';
-						await hisoka.sendMessage(
+						await wilykun.sendMessage(
 							'status@broadcast',
 							{
 								[type]: await downloadM(),
@@ -290,7 +283,7 @@ ${cpus
 				} else if (m.mentions.length !== 0) {
 					for (let id of m.mentions) {
 						await delay(1500);
-						let url = await hisoka.profilePictureUrl(id, 'image');
+						let url = await wilykun.profilePictureUrl(id, 'image');
 						let media = await Func.fetchBuffer(url);
 						let sticker = await (await import('./lib/sticker.js')).writeExif(media, { packName: process.env.packName, packPublish: process.env.packPublish });
 						await m.reply({ sticker });
@@ -330,17 +323,17 @@ ${cpus
 
 			case 'link':
 				if (!m.isGroup && !m.isBotAdmin) throw 'Gabisa, kalo ga karena bot bukan admin ya karena bukan grup';
-				await m.reply('https://chat.whatsapp.com/' + (m.metadata?.inviteCode || (await hisoka.groupInviteCode(m.from))));
+				await m.reply('https://chat.whatsapp.com/' + (m.metadata?.inviteCode || (await wilykun.groupInviteCode(m.from))));
 				break;
 
 			case 'delete':
 			case 'del':
 				if (quoted.fromMe) {
-					await hisoka.sendMessage(m.from, { delete: quoted.key });
+					await wilykun.sendMessage(m.from, { delete: quoted.key });
 				} else {
 					if (!m.isBotAdmin) throw 'Bot bukan admin';
 					if (!m.isAdmin) throw 'Lhu bukan admin paok 😂';
-					await hisoka.sendMessage(m.from, { delete: quoted.key });
+					await wilykun.sendMessage(m.from, { delete: quoted.key });
 				}
 				break;
 

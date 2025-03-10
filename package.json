@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "pm2": "pm2 start index.js --name hisoka -- --max-old-space-size=8192",
-    "restart:pm2": "pm2 restart hisoka",
-    "stop:pm2": "pm2 stop hisoka"
+    "pm2": "pm2 start index.js --name wilykun -- --max-old-space-size=8192",
+    "restart:pm2": "pm2 restart wilykun",
+    "stop:pm2": "pm2 stop wilykun"
   },
   "keywords": [
     "autoreadsw",
